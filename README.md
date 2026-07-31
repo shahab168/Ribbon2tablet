@@ -1,0 +1,1 @@
+This repository contains files that enable the ML-driven integration of dry granulation processes, namely roller compaction, milling, and tablet press. One can use the ML-based digital twin to study the impact of ribbon properties on granules and tablets (drug product) quality. 
