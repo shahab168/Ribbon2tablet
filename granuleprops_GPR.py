@@ -1,13 +1,12 @@
 import random, torch, joblib
 import numpy as np
 import pandas as pd
-from keras.src.layers import BatchNormalization, LayerNormalization
+from keras.src.layers import LayerNormalization
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process import GaussianProcessClassifier
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, Matern, WhiteKernel
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, roc_auc_score, f1_score, accuracy_score
-from sklearn.model_selection import KFold, train_test_split, StratifiedKFold
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import KFold
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -19,10 +18,9 @@ from tensorflow.keras.regularizers import l2
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.models import clone_model
 from tensorflow.keras.optimizers import Adam
-from sklearn.model_selection import train_test_split, LeaveOneOut
-from tabpfn_client import TabPFNClassifier, TabPFNRegressor, set_access_token
-set_access_token("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiMmM1NGYxMDctN2RkZi00M2JiLWFhMzMtMzNlYmU1ZWQ5YWNmIiwiZXhwIjoxODExMzE0OTc5fQ.0_0qZaDmAPRMUltitH_lTdHgni5VE2cKgFQ4iXYEIFs")
+from sklearn.model_selection import train_test_split
 import os
+
 
 SEED = 7
 os.environ["PYTHONHASHSEED"] = str(SEED)
@@ -627,192 +625,3 @@ joblib.dump(scaler_stage2,'stage2_scaler.pkl')
 joblib.dump(scaler_Y_pre,'stage2_output_scaler.pkl')
 
 print("\nFinal Stage-2 models saved.\n")
-
-
-
-#==========Baseline comparison================
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import KFold
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
-import numpy as np
-
-print("TRAINING MULTI-OUTPUT RANDOM FOREST")
-# ============================
-# KFOLD RANDOM FOREST EVALUATION
-# ============================
-kf = KFold(n_splits=5, shuffle=True, random_state=42)
-
-r2_scores = []
-mae_scores = []
-mse_scores = []
-
-r2_d10_scores = []
-r2_d50_scores = []
-r2_d90_scores = []
-
-for fold, (train_idx, val_idx) in enumerate(kf.split(X_stage2_scaled)):
-
-    print(f"Fold {fold+1}")
-
-    X_train = X_stage2_scaled[train_idx]
-    X_val = X_stage2_scaled[val_idx]
-
-    Y_train = Y_scaled[train_idx]
-    Y_val = Y_scaled[val_idx]
-
-    # Train multi-output Random Forest
-    rf_model = RandomForestRegressor(
-        n_estimators=500,
-        max_depth=None,
-        min_samples_split=2,
-        min_samples_leaf=2,
-        max_features='sqrt',
-        bootstrap=True,
-        random_state=42,
-        n_jobs=-1
-    )
-
-    rf_model.fit(X_train, Y_train)
-
-    pred = rf_model.predict(X_val)
-
-    # Overall metrics
-    r2_scores.append(r2_score(Y_val.flatten(), pred.flatten()))
-    mae_scores.append(mean_absolute_error(Y_val.flatten(), pred.flatten()))
-    mse_scores.append(mean_squared_error(Y_val.flatten(), pred.flatten()))
-
-    # Individual output metrics
-    r2_d10_scores.append(r2_score(Y_val[:, 0], pred[:, 0]))
-    r2_d50_scores.append(r2_score(Y_val[:, 1], pred[:, 1]))
-    r2_d90_scores.append(r2_score(Y_val[:, 2], pred[:, 2]))
-
-print("----Multi-Output Random Forest Results--------")
-
-print(f"Overall R² : {np.mean(r2_scores):.4f}")
-print(f"Overall MAE: {np.mean(mae_scores):.4f}")
-print(f"Overall MSE: {np.mean(mse_scores):.4f}")
-
-print("\n--------------- INDIVIDUAL OUTPUTS ---------------\n")
-
-print(f"D10 R²: {np.mean(r2_d10_scores):.4f}")
-print(f"D50 R²: {np.mean(r2_d50_scores):.4f}")
-print(f"D90 R²: {np.mean(r2_d90_scores):.4f}")
-
-
-#==========Baseline comparison================
-import numpy as np
-import torch
-import gpytorch
-
-from sklearn.model_selection import KFold
-from sklearn.metrics import r2_score, mean_absolute_error, mean_squared_error
-
-print("TRAINING MULTITASK GAUSSIAN PROCESS")
-# ------------------------------
-# Multitask GP Model
-# ------------------------------
-class MTGP(gpytorch.models.ExactGP):
-
-    def __init__(self, x, y, likelihood):
-        super().__init__(x, y, likelihood)
-
-        self.mean_module = gpytorch.means.MultitaskMean(
-            gpytorch.means.ConstantMean(),
-            num_tasks=3
-        )
-
-        self.covar_module = gpytorch.kernels.MultitaskKernel(
-            gpytorch.kernels.MaternKernel(
-                nu=2.5,
-                ard_num_dims=x.shape[1]
-            ),
-            num_tasks=3,
-            rank=2
-        )
-
-    def forward(self, x):
-        mean = self.mean_module(x)
-        cov = self.covar_module(x)
-        return gpytorch.distributions.MultitaskMultivariateNormal(mean, cov)
-
-# ============================
-# KFOLD MTGP EVALUATION
-# ============================
-
-kf = KFold(n_splits=5, shuffle=True, random_state=42)
-
-r2_scores = []
-mae_scores = []
-mse_scores = []
-
-r2_d10_scores = []
-r2_d50_scores = []
-r2_d90_scores = []
-
-for fold, (train_idx, val_idx) in enumerate(kf.split(X_stage2_scaled)):
-
-    print(f"Fold {fold+1}")
-
-    X_train = torch.tensor(X_stage2_scaled[train_idx], dtype=torch.float32)
-    X_val   = torch.tensor(X_stage2_scaled[val_idx], dtype=torch.float32)
-
-    Y_train = torch.tensor(Y_scaled[train_idx], dtype=torch.float32)
-    Y_val   = Y_scaled[val_idx]
-
-    likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(num_tasks=3)
-    model = MTGP(X_train, Y_train, likelihood)
-
-    model.train()
-    likelihood.train()
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.05)
-    mll = gpytorch.mlls.ExactMarginalLogLikelihood(likelihood, model)
-
-    for _ in range(500):
-        optimizer.zero_grad()
-        loss = -mll(model(X_train), Y_train)
-        loss.backward()
-        optimizer.step()
-
-    model.eval()
-    likelihood.eval()
-
-    with torch.no_grad(), gpytorch.settings.fast_pred_var():
-        pred = likelihood(model(X_val)).mean.cpu().numpy()
-
-    # Overall metrics
-    r2_scores.append(r2_score(Y_val.flatten(), pred.flatten()))
-    mae_scores.append(mean_absolute_error(Y_val.flatten(), pred.flatten()))
-    mse_scores.append(mean_squared_error(Y_val.flatten(), pred.flatten()))
-
-    # Individual outputs
-    r2_d10_scores.append(r2_score(Y_val[:,0], pred[:,0]))
-    r2_d50_scores.append(r2_score(Y_val[:,1], pred[:,1]))
-    r2_d90_scores.append(r2_score(Y_val[:,2], pred[:,2]))
-
-print("----Multitask Gaussian Process Results--------")
-
-print(f"Overall R² : {np.mean(r2_scores):.4f}")
-print(f"Overall MAE: {np.mean(mae_scores):.4f}")
-print(f"Overall MSE: {np.mean(mse_scores):.4f}")
-
-print("\n--------------- INDIVIDUAL OUTPUTS ---------------\n")
-
-print(f"D10 R²: {np.mean(r2_d10_scores):.4f}")
-print(f"D50 R²: {np.mean(r2_d50_scores):.4f}")
-print(f"D90 R²: {np.mean(r2_d90_scores):.4f}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
