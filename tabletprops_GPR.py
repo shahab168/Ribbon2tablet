@@ -3,11 +3,10 @@ import numpy as np
 import pandas as pd
 from keras.src.layers import BatchNormalization
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process import GaussianProcessClassifier
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C, Matern, WhiteKernel
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, roc_auc_score, f1_score, accuracy_score
-from sklearn.model_selection import KFold, train_test_split, StratifiedKFold
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import KFold
 import seaborn as sns
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -19,9 +18,7 @@ from tensorflow.keras.regularizers import l2
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.models import clone_model
 from tensorflow.keras.optimizers import Adam
-from sklearn.model_selection import train_test_split, LeaveOneOut
-from tabpfn_client import TabPFNClassifier, TabPFNRegressor, set_access_token
-set_access_token("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiMmM1NGYxMDctN2RkZi00M2JiLWFhMzMtMzNlYmU1ZWQ5YWNmIiwiZXhwIjoxODExMzE0OTc5fQ.0_0qZaDmAPRMUltitH_lTdHgni5VE2cKgFQ4iXYEIFs")
+from sklearn.model_selection import train_test_split
 import os
 
 SEED = 7
@@ -673,63 +670,3 @@ joblib.dump(scaler_stage3,'stage3_scaler.pkl')
 joblib.dump(scaler_Y_pre_s3,'stage3_output_scaler.pkl')
 
 print("\nFinal Stage-3 models saved.\n")
-
-
-# TABPFN REGRESSION ENSEMBLE
-N_TABPFN = 10
-tabpfn_models = []
-print("TRAINING TABPFN ENSEMBLE")
-
-"""for i in range(N_TABPFN):
-    model_pf = TabPFNRegressor(random_state=i)
-    model_pf.fit(X_syn, Y_syn)
-    tabpfn_models.append(model_pf)
-
-print("TabPFN ensemble ready.")"""
-
-# KFOLD TABPFN EVALUATION
-kf = KFold(n_splits=5, shuffle=True, random_state=42)
-
-r2_scores, mae_scores, mse_scores = [], [], []
-r2_W_scores, r2_ER_scores, r2_RD_scores, r2_TS_scores = [], [], [], []
-
-for fold, (train_idx, val_idx) in enumerate(kf.split(X_scaled_s3)):
-
-    print(f"Fold {fold+1}")
-
-    X_train = X_scaled_s3[train_idx]
-    X_val = X_scaled_s3[val_idx]
-
-    Y_train = Y_scaled_s3[train_idx]
-    Y_val = Y_scaled_s3[val_idx]
-
-    fold_preds = []
-    for seed in range(N_TABPFN):
-        model_pf = TabPFNRegressor(random_state=seed)
-        model_pf.fit(X_train, Y_train)
-        pred = model_pf.predict(X_val)
-        fold_preds.append(pred)
-
-    fold_preds = np.array(fold_preds)
-    pred_mean = np.mean(fold_preds, axis=0)
-
-    r2_scores.append(r2_score(Y_val.flatten(), pred_mean.flatten()))
-    mae_scores.append(mean_absolute_error(Y_val.flatten(), pred_mean.flatten()))
-    mse_scores.append(mean_squared_error(Y_val.flatten(), pred_mean.flatten()))
-
-    r2_W_scores.append(r2_score(Y_val[:,0], pred_mean[:,0]))
-    r2_ER_scores.append(r2_score(Y_val[:,1], pred_mean[:,1]))
-    r2_RD_scores.append(r2_score(Y_val[:,2], pred_mean[:,2]))
-    r2_TS_scores.append(r2_score(Y_val[:, 3], pred_mean[:, 3]))
-
-print("----TabPFN Regressor results--------")
-print(f"Ensemble TL R²: {np.mean(r2_scores):.4f}")
-print(f"Ensemble TL MAE: {np.mean(mae_scores):.4f}")
-print(f"Ensemble TL MSE: {np.mean(mse_scores):.4f}")
-
-print("\n--------------- INDIVIDUAL OUTPUTS ---------------\n")
-
-print(f"W R²: {np.mean(r2_W_scores):.4f}")
-print(f"ER R²: {np.mean(r2_ER_scores):.4f}")
-print(f"RD R²: {np.mean(r2_RD_scores):.4f}")
-print(f"TS R²: {np.mean(r2_TS_scores):.4f}")
